@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 
-require("./database/db");
+require("./db");
 require("./websocket");
 
 const examRoutes = require("./routes/exam");

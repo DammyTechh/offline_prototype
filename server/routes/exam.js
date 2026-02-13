@@ -2,9 +2,7 @@ const express = require("express");
 const router = express.Router();
 const db = require("../database/db");
 
-// Get all questions
 router.get("/questions", (req, res) => {
-
   db.all("SELECT * FROM questions", [], (err, rows) => {
     if (err) return res.status(500).json(err);
 
@@ -16,7 +14,6 @@ router.get("/questions", (req, res) => {
 
     res.json(formatted);
   });
-
 });
 
 module.exports = router;

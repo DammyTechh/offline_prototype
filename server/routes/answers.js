@@ -1,29 +1,33 @@
 const express = require("express");
 const router = express.Router();
-const db = require("../database/db");
-const { randomUUID } = require("crypto");
 
+const Answer = require("../models/Answer");
+const { encrypt } = require("../utils/crypto");
 
-router.post("/submit", (req, res) => {
+router.post("/bulk", async (req, res) => {
+  try {
+    const answers = req.body;
 
-  const { student_id, question_id, answer, source } = req.body;
+    for (const a of answers) {
+      await Answer.updateOne(
+        {
+          student_id: a.student_id,
+          question_id: a.question_id
+        },
+        {
+          student_id: a.student_id,
+          question_id: a.question_id,
+          answer: encrypt(String(a.answer)),
+          timestamp: a.timestamp || Date.now()
+        },
+        { upsert: true }
+      );
+    }
 
-  const id = randomUUID();
-
-  db.run(`
-    INSERT INTO answers
-    (id, student_id, question_id, answer, source)
-    VALUES (?, ?, ?, ?, ?)
-  `,
-  [id, student_id, question_id, answer, source],
-  (err) => {
-
-    if (err) return res.status(500).json(err);
-
-    res.json({ status: "saved offline" });
-
-  });
-
+    res.json({ status: "synced" });
+  } catch (err) {
+    res.status(500).json(err);
+  }
 });
 
 module.exports = router;

@@ -1,101 +1,110 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useExamStore } from "../stores/examStore";
-import { getAllAnswers } from "../offline/db";
+import { getAllLocal } from "../offline/secureStorage";
 import api from "../services/api";
 
 const store = useExamStore();
 
-
 const started = ref(false);
 const timeLeft = ref(1800);
-let timer:number|undefined;
-const selected = ref<number|null>(null);
+let timer: number | undefined;
 
+const selected = ref<number | null>(null);
+
+const violations = ref(0);
+const maxViolations = 3;
 
 const showModal = ref(false);
 const modalText = ref("");
-const modalType = ref<"success"|"error"|"info">("info");
+const modalType = ref<"success" | "error" | "info">("info");
 
-function openModal(text:string,type:"success"|"error"|"info"="info"){
-  modalText.value=text;
-  modalType.value=type;
-  showModal.value=true;
+function openModal(text: string, type: "success" | "error" | "info" = "info") {
+  modalText.value = text;
+  modalType.value = type;
+  showModal.value = true;
 }
-function closeModal(){
-  showModal.value=false;
+function closeModal() {
+  showModal.value = false;
 }
 
-
-onMounted(async ()=>{
+onMounted(async () => {
   await store.loadQuestions();
+  setupAntiCheat();
 });
 
+onUnmounted(() => {
+  removeAntiCheat();
+});
 
-const q = computed(()=> store.questions[store.currentIndex]);
+const q = computed(() => store.questions[store.currentIndex]);
 
-const progress = computed(()=>{
+const progress = computed(() => {
   return store.questions.length
-    ? ((store.currentIndex+1)/store.questions.length)*100
+    ? ((store.currentIndex + 1) / store.questions.length) * 100
     : 0;
 });
 
 
-function startExam(){
-  if(navigator.onLine){
-    openModal("Turn OFF internet before starting exam","error");
+function startExam() {
+  if (navigator.onLine) {
+    openModal("Turn OFF internet before starting exam", "error");
     return;
   }
-  started.value=true;
+  started.value = true;
   startTimer();
 }
 
-
-function startTimer(){
-  timer=setInterval(()=>{
+// ================= TIMER =================
+function startTimer() {
+  timer = setInterval(() => {
     timeLeft.value--;
-
-    if(timeLeft.value<=0){
+    if (timeLeft.value <= 0) {
       clearInterval(timer);
-      openModal("Time is up! Connect internet to submit.","info");
+      openModal("Time is up! Connect internet to submit.", "info");
     }
-  },1000);
+  }, 1000);
 }
 
-function formatTime(t:number){
-  const m=Math.floor(t/60);
-  const s=t%60;
-  return m+":"+(s<10?"0"+s:s);
+function formatTime(t: number) {
+  const m = Math.floor(t / 60);
+  const s = t % 60;
+  return m + ":" + (s < 10 ? "0" + s : s);
 }
 
-
-function pick(i:number){
-  selected.value=i;
+// ================= OPTIONS =================
+function pick(i: number) {
+  selected.value = i;
 }
 
-
-function next(){
-  if(selected.value===null){
-    openModal("Select an option first","error");
+// ================= NAVIGATION =================
+function next() {
+  if (selected.value === null) {
+    openModal("Select an option first", "error");
     return;
   }
   store.submitAnswer(selected.value);
-  selected.value=null;
+  selected.value = null;
 }
 
+function previous() {
+  if (store.currentIndex > 0) {
+    store.currentIndex--;
+  }
+}
 
-async function submitExam(){
-
-  if(!navigator.onLine){
-    openModal("Turn ON internet before submitting","error");
+// ================= SUBMIT =================
+async function submitExam() {
+  if (!navigator.onLine) {
+    openModal("Turn ON internet before submitting", "error");
     return;
   }
 
-  try{
-    const answers = await getAllAnswers();
+  try {
+    const answers = getAllLocal();
 
-    if(!answers.length){
-      openModal("No answers recorded","error");
+    if (!answers.length) {
+      openModal("No answers recorded", "error");
       return;
     }
 
@@ -103,18 +112,45 @@ async function submitExam(){
 
     const res = await api.post("/answers/bulk", answers);
 
-    if(res.status === 200 || res.status === 201){
-      openModal("Submitted successfully! Good luck","success");
-
-      setTimeout(()=>{
-        location.reload();
-      },2500);
+    if (res.status === 200 || res.status === 201) {
+      openModal("Submitted successfully! Good luck", "success");
+      setTimeout(() => location.reload(), 2500);
     }
-
-  }catch(e){
-    console.error(e);
-    openModal("Submission failed. Try again.","error");
+  } catch {
+    openModal("Submission failed. Try again.", "error");
   }
+}
+
+// ================= ANTI CHEAT =================
+function handleViolation() {
+  if (!started.value) return;
+
+  violations.value++;
+
+  if (violations.value >= maxViolations) {
+    openModal(
+      "You minimized/tab-switched 3 times. Turn ON internet and submit now.",
+      "error"
+    );
+    clearInterval(timer);
+  } else {
+    openModal(
+      `Warning: Do not leave exam window (${violations.value}/${maxViolations})`,
+      "info"
+    );
+  }
+}
+
+function setupAntiCheat() {
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) handleViolation();
+  });
+
+  window.addEventListener("blur", handleViolation);
+}
+
+function removeAntiCheat() {
+  window.removeEventListener("blur", handleViolation);
 }
 </script>
 
@@ -134,18 +170,14 @@ async function submitExam(){
         Question {{store.currentIndex+1}} /
         {{store.questions.length}}
       </div>
-      <div class="timer">
-        {{formatTime(timeLeft)}}
-      </div>
+      <div class="timer">{{formatTime(timeLeft)}}</div>
     </div>
 
     <div class="bar">
       <div class="fill" :style="{width:progress+'%'}"></div>
     </div>
 
-    <div class="question">
-      {{q.text}}
-    </div>
+    <div class="question">{{q.text}}</div>
 
     <div class="options">
       <button
@@ -153,25 +185,23 @@ async function submitExam(){
         :key="i"
         @click="pick(i)"
         :class="{active:selected===i}"
-      >
-        {{o}}
-      </button>
+      >{{o}}</button>
     </div>
 
     <div class="nav">
-      <button @click="next">Next</button>
-      <button @click="submitExam" class="submit">
+      <button class="prev" @click="previous" :disabled="store.currentIndex===0">
+        Previous
+      </button>
+
+      <button class="next" @click="next">
+        Next
+      </button>
+
+      <button class="submit" @click="submitExam">
         Submit
       </button>
     </div>
 
-  </div>
-
-  <div v-else class="finish">
-    <h2>Exam Completed</h2>
-    <button @click="submitExam">
-      Submit Results
-    </button>
   </div>
 
   <div v-if="showModal" class="modal-overlay">
@@ -194,19 +224,8 @@ async function submitExam(){
   font-family:Arial;
 }
 
-.start{text-align:center;}
-
-.start button{
-  padding:14px 28px;
-  background:#1e3a8a;
-  color:white;
-  border:none;
-  border-radius:8px;
-  cursor:pointer;
-}
-
 .exam{
-  width:800px;
+  width:820px;
   background:white;
   padding:30px;
   border-radius:12px;
@@ -219,7 +238,10 @@ async function submitExam(){
   font-weight:600;
 }
 
-.timer{color:#dc2626;}
+.timer{
+  color:#dc2626;
+  font-size:18px;
+}
 
 .bar{
   height:8px;
@@ -230,8 +252,7 @@ async function submitExam(){
 
 .fill{
   height:100%;
-  background:#1e3a8a;
-  border-radius:4px;
+  background:#2563eb;
 }
 
 .question{
@@ -247,27 +268,33 @@ async function submitExam(){
 
 .options button{
   padding:14px;
-  border:1px solid #ccc;
   border-radius:8px;
-  background:white;
+  border:1px solid #ccc;
   cursor:pointer;
 }
 
 .options button.active{
-  background:#1e3a8a;
+  background:#2563eb;
   color:white;
 }
 
 .nav{
   display:flex;
   justify-content:space-between;
-  margin-top:20px;
+  margin-top:25px;
 }
 
-.submit{
-  background:#16a34a;
+.nav button{
+  padding:12px 22px;
+  border:none;
+  border-radius:8px;
   color:white;
+  cursor:pointer;
 }
+
+.prev{ background:#6b7280; }
+.next{ background:#2563eb; }
+.submit{ background:#16a34a; }
 
 .modal-overlay{
   position:fixed;
@@ -284,15 +311,6 @@ async function submitExam(){
   border-radius:12px;
   width:320px;
   text-align:center;
-  box-shadow:0 10px 30px rgba(0,0,0,.2);
-}
-
-.modal button{
-  padding:10px 20px;
-  background:#1e3a8a;
-  color:white;
-  border:none;
-  border-radius:6px;
 }
 
 .modal.success{ border-top:6px solid #16a34a; }
