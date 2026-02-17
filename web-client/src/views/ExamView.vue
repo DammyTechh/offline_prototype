@@ -28,6 +28,7 @@ function closeModal() {
   showModal.value = false;
 }
 
+/* ================= LOAD ================= */
 onMounted(async () => {
   await store.loadQuestions();
   setupAntiCheat();
@@ -35,9 +36,15 @@ onMounted(async () => {
 
 onUnmounted(() => {
   removeAntiCheat();
+  clearInterval(timer);
 });
 
-const q = computed(() => store.questions[store.currentIndex]);
+/* ================= SAFE QUESTION ================= */
+const q = computed(() => {
+  if (!store.questions.length) return null;
+  if (store.currentIndex >= store.questions.length) return null;
+  return store.questions[store.currentIndex];
+});
 
 const progress = computed(() => {
   return store.questions.length
@@ -45,17 +52,23 @@ const progress = computed(() => {
     : 0;
 });
 
-
+/* ================= START ================= */
 function startExam() {
+  if (!store.questions.length) {
+    openModal("Questions not loaded. Refresh online first.", "error");
+    return;
+  }
+
   if (navigator.onLine) {
     openModal("Turn OFF internet before starting exam", "error");
     return;
   }
+
   started.value = true;
   startTimer();
 }
 
-// ================= TIMER =================
+/* ================= TIMER ================= */
 function startTimer() {
   timer = setInterval(() => {
     timeLeft.value--;
@@ -72,17 +85,18 @@ function formatTime(t: number) {
   return m + ":" + (s < 10 ? "0" + s : s);
 }
 
-// ================= OPTIONS =================
+/* ================= OPTIONS ================= */
 function pick(i: number) {
   selected.value = i;
 }
 
-// ================= NAVIGATION =================
+/* ================= NAVIGATION ================= */
 function next() {
   if (selected.value === null) {
     openModal("Select an option first", "error");
     return;
   }
+
   store.submitAnswer(selected.value);
   selected.value = null;
 }
@@ -93,8 +107,13 @@ function previous() {
   }
 }
 
-// ================= SUBMIT =================
+/* ================= SUBMIT ================= */
 async function submitExam() {
+  if (selected.value !== null) {
+    store.submitAnswer(selected.value);
+    selected.value = null;
+  }
+
   if (!navigator.onLine) {
     openModal("Turn ON internet before submitting", "error");
     return;
@@ -121,7 +140,7 @@ async function submitExam() {
   }
 }
 
-// ================= ANTI CHEAT =================
+/* ================= ANTI CHEAT ================= */
 function handleViolation() {
   if (!started.value) return;
 
@@ -157,12 +176,14 @@ function removeAntiCheat() {
 <template>
 <div class="page">
 
+  <!-- START SCREEN -->
   <div v-if="!started" class="start">
     <h1>Computer Based Test</h1>
     <p>Disconnect internet before starting.</p>
     <button @click="startExam">Start Exam</button>
   </div>
 
+  <!-- EXAM -->
   <div v-else-if="q" class="exam">
 
     <div class="header">
@@ -185,7 +206,9 @@ function removeAntiCheat() {
         :key="i"
         @click="pick(i)"
         :class="{active:selected===i}"
-      >{{o}}</button>
+      >
+        {{o}}
+      </button>
     </div>
 
     <div class="nav">
@@ -204,6 +227,13 @@ function removeAntiCheat() {
 
   </div>
 
+  <!-- SAFETY FALLBACK -->
+  <div v-else class="start">
+    <h2>No question loaded</h2>
+    <p>Reload page while online.</p>
+  </div>
+
+  <!-- MODAL -->
   <div v-if="showModal" class="modal-overlay">
     <div class="modal" :class="modalType">
       <p>{{modalText}}</p>
@@ -222,6 +252,14 @@ function removeAntiCheat() {
   justify-content:center;
   align-items:center;
   font-family:Arial;
+}
+
+.start{
+  background:white;
+  padding:40px;
+  border-radius:12px;
+  text-align:center;
+  box-shadow:0 10px 30px rgba(0,0,0,.1);
 }
 
 .exam{

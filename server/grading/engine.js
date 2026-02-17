@@ -1,33 +1,25 @@
-const db = require("../database/db");
+const Answer = require("../models/Answer");
+const Question = require("../models/Question");
+const { decrypt } = require("../utils/crypto");
 
-function gradeStudent(student_id) {
+async function gradeStudent(student_id) {
+  const answers = await Answer.find({ student_id });
 
-  return new Promise((resolve) => {
+  let score = 0;
 
-    db.all(`
-      SELECT a.answer, q.correct_answer
-      FROM answers a
-      JOIN questions q
-      ON a.question_id = q.id
-      WHERE a.student_id = ?
-    `,
-    [student_id],
-    (err, rows) => {
+  for (const a of answers) {
+    const q = await Question.findById(a.question_id);
 
-      let score = 0;
+    if (!q) continue;
 
-      rows.forEach(r => {
-        if (r.answer === r.correct_answer) {
-          score++;
-        }
-      });
+    const decrypted = Number(decrypt(a.answer));
 
-      resolve(score);
+    if (decrypted === q.correct_answer) {
+      score++;
+    }
+  }
 
-    });
-
-  });
-
+  return score;
 }
 
 module.exports = gradeStudent;

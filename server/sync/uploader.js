@@ -1,17 +1,10 @@
-// uploader for sync.
-const db = require("../database/db");
+const Answer = require("../models/Answer");
 
-function syncToCloud() {
+async function syncToCloud() {
+  const answers = await Answer.find();
 
-  db.all("SELECT * FROM answers", [], (err, rows) => {
-
-    console.log("Syncing answers to cloud…");
-    console.log(rows);
-
-    // Here you POST to SaaS API
-
-  });
-
+  console.log("Syncing answers to cloud…");
+  console.log(answers);
 }
 
 module.exports = syncToCloud;

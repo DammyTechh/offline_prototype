@@ -1,19 +1,24 @@
 const express = require("express");
 const router = express.Router();
-const db = require("../database/db");
+const Question = require("../models/Question");
 
-router.get("/questions", (req, res) => {
-  db.all("SELECT * FROM questions", [], (err, rows) => {
-    if (err) return res.status(500).json(err);
+router.get("/questions", async (req, res) => {
+  try {
+    const questions = await Question.find({}, {
+      text: 1,
+      options: 1
+    }).lean();
 
-    const formatted = rows.map(q => ({
-      id: q.id,
-      text: q.text,
-      options: q.options.split(",")
-    }));
-
-    res.json(formatted);
-  });
+    res.json(
+      questions.map(q => ({
+        id: q._id.toString(),
+        text: q.text,
+        options: q.options
+      }))
+    );
+  } catch (err) {
+    res.status(500).json({ message: "Failed to fetch questions" });
+  }
 });
 
 module.exports = router;

@@ -4,7 +4,9 @@ import api from "../services/api";
 import {
   saveAnswerLocal,
   getAllLocal,
-  clearLocal
+  clearLocal,
+  saveQuestionsLocal,
+  getQuestionsLocal
 } from "../offline/secureStorage";
 
 import type { LocalAnswer } from "../offline/secureStorage";
@@ -13,34 +15,55 @@ import type { Question } from "../types";
 export const useExamStore = defineStore("exam", {
   state: () => ({
     questions: [] as Question[],
-    currentIndex: 0
+    currentIndex: 0,
+    loading: false
   }),
 
   actions: {
-    /* LOAD QUESTIONS */
+    /* ================= LOAD QUESTIONS ================= */
     async loadQuestions() {
-      const res = await api.get<Question[]>("/exam/questions");
-      this.questions = res.data;
+      this.loading = true;
+
+      try {
+        // Try loading from server
+        const res = await api.get<Question[]>("/exam/questions");
+
+        this.questions = res.data;
+
+        // Save offline copy
+        saveQuestionsLocal(res.data);
+
+      } catch (error) {
+        console.log("Server unavailable. Loading offline copy...");
+
+        const cached = getQuestionsLocal();
+
+        if (cached.length) {
+          this.questions = cached;
+        } else {
+          console.error("No offline questions available");
+        }
+      }
+
+      this.loading = false;
     },
 
-    /* SAVE ANSWER OFFLINE */
-    submitAnswer(i: number) {
+    submitAnswer(selectedIndex: number) {
       const q = this.questions[this.currentIndex];
       if (!q) return;
 
       const payload: LocalAnswer = {
         student_id: "student1",
         question_id: q.id,
-        answer: i,
-        source: "offline"
+        answer: selectedIndex,
+        source: navigator.onLine ? "online" : "offline"
       };
 
       saveAnswerLocal(payload);
-
       this.currentIndex++;
     },
 
-    /* SYNC WHEN ONLINE */
+    
     async syncAnswers() {
       const answers = getAllLocal();
 
@@ -52,8 +75,9 @@ export const useExamStore = defineStore("exam", {
         clearLocal();
 
         console.log("Synced successfully");
-      } catch (err) {
-        console.log("Sync failed", err);
+
+      } catch (error) {
+        console.log("Sync failed", error);
       }
     }
   }
